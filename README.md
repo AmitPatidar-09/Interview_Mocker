@@ -35,16 +35,9 @@ An AI-powered coding interview platform designed to help users practice and prep
 
 ```text
 Interview Mocker/
-├── backend/                  # FastAPI backend
-│   ├── app/                  # Application code (routes, models, schemas, services)
-│   ├── requirements.txt      # Python dependencies
-│   ├── .env.example          # Environment variables template
-│   └── main.py               # Entry point for FastAPI
-├── frontend/                 # React frontend
-│   ├── src/                  # React components, pages, and assets
-│   ├── package.json          # Node.js dependencies
-│   └── vite.config.js        # Vite configuration
-└── README.md                 # Project documentation
+├── backend/
+├── frontend/
+└── README.md
 ```
 
 ## ⚙️ Installation & Setup
@@ -53,46 +46,21 @@ Interview Mocker/
 - Python 3.9+
 - Node.js & npm (or yarn)
 
-### 1. Clone the repository
-```bash
-git clone <repository-url>
-cd "Interview Mocker"
-```
+### Backend Setup
 
-### 2. Backend Setup
 ```bash
 cd backend
-
-# Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your database URI, JWT secret, and API keys (Gemini, Groq)
-
-# Run the FastAPI server
 uvicorn main:app --reload
 ```
-The backend server will run at `http://localhost:8000`. API documentation is available at `http://localhost:8000/docs`.
 
-### 3. Frontend Setup
+### Frontend Setup
+
 ```bash
-cd ../frontend
-
-# Install dependencies
+cd frontend
 npm install
-
-# Run the development server
 npm run dev
 ```
-The frontend application will be accessible at `http://localhost:5173`.
 
 ## 🤝 Contributing
 Contributions, issues, and feature requests are welcome!
-
-## 📝 License
-This project is licensed under the MIT License.
