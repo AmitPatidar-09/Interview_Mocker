@@ -2,8 +2,12 @@
 Coding routes — DSA problem generation, code run, and code submission.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from ..database import get_db
 from ..models.user import User
@@ -14,12 +18,19 @@ from ..schemas.coding import (
     SubmitCodeRequest,
     SubmitCodeResponse,
     CodeReviewResult,
-    SUPPORTED_LANGUAGES,
 )
 from ..services.coding_service import generate_dsa_problem, execute_code, submit_and_review
 from ..utils.auth import get_current_user
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/coding", tags=["coding"])
+
+# Fix #6: Size limit for source code (100KB)
+MAX_CODE_SIZE = 100_000
+
+# Language IDs — single source of truth (Fix #16: imported from judge0_service)
+from ..services.judge0_service import LANGUAGE_IDS
 
 
 @router.get("/problem")
@@ -30,7 +41,7 @@ async def get_dsa_problem(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Generate a new DSA coding problem using Gemini.
+    Generate a new DSA coding problem using the configured AI provider.
     Returns problem details including title, description, examples, constraints,
     starter code in multiple languages, and test cases.
     """
@@ -38,9 +49,11 @@ async def get_dsa_problem(
         problem = await generate_dsa_problem(db=db, difficulty=difficulty, company_mode=company_mode)
         return problem
     except Exception as e:
+        # Fix #21: Don't leak internal details to client
+        logger.exception("Failed to generate DSA problem")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate problem: {str(e)}",
+            detail="Failed to generate problem. Please try again.",
         )
 
 
@@ -53,10 +66,17 @@ async def run_code_endpoint(
     Execute code via Judge0 (single run — no test cases evaluated).
     Supports: python, javascript, java, cpp, c, typescript, go, rust.
     """
-    if payload.language.lower() not in SUPPORTED_LANGUAGES:
+    # Fix #6: Enforce code size limit
+    if len(payload.source_code) > MAX_CODE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Unsupported language '{payload.language}'. Supported: {list(SUPPORTED_LANGUAGES.keys())}",
+            detail=f"Source code exceeds maximum size of {MAX_CODE_SIZE // 1000}KB",
+        )
+
+    if payload.language.lower() not in LANGUAGE_IDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported language '{payload.language}'. Supported: {list(LANGUAGE_IDS.keys())}",
         )
     try:
         result = await execute_code(
@@ -73,9 +93,11 @@ async def run_code_endpoint(
             memory=result.get("memory"),
         )
     except Exception as e:
+        # Fix #21: Don't leak internal details
+        logger.exception("Code execution failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Code execution failed: {str(e)}",
+            detail="Code execution failed. Please try again.",
         )
 
 
@@ -88,10 +110,17 @@ async def submit_code(
     """
     Submit code for evaluation:
     1. Runs against provided test cases via Judge0.
-    2. Gets an AI code review from Gemini.
+    2. Gets an AI code review from configured provider.
     3. Persists and returns the full result.
     """
-    if payload.language.lower() not in SUPPORTED_LANGUAGES:
+    # Fix #6: Enforce code size limit
+    if len(payload.source_code) > MAX_CODE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Source code exceeds maximum size of {MAX_CODE_SIZE // 1000}KB",
+        )
+
+    if payload.language.lower() not in LANGUAGE_IDS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unsupported language '{payload.language}'.",
@@ -121,9 +150,11 @@ async def submit_code(
             request_ai_review=payload.request_ai_review,
         )
     except Exception as e:
+        # Fix #21: Don't leak internal details
+        logger.exception("Code submission failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Submission failed: {str(e)}",
+            detail="Submission failed. Please try again.",
         )
 
     return SubmitCodeResponse(

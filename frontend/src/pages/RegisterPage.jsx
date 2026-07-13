@@ -16,7 +16,10 @@ export default function RegisterPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.full_name || !form.email || !form.password) return toast.error('Please fill all fields')
-    if (form.password.length < 6) return toast.error('Password must be at least 6 characters')
+    if (form.password.length < 8) return toast.error('Password must be at least 8 characters')
+    if (!/[A-Z]/.test(form.password)) return toast.error('Password must contain an uppercase letter')
+    if (!/[a-z]/.test(form.password)) return toast.error('Password must contain a lowercase letter')
+    if (!/\d/.test(form.password)) return toast.error('Password must contain a digit')
     setLoading(true)
     try {
       await register(form.email, form.full_name, form.password)
@@ -83,7 +86,7 @@ export default function RegisterPage() {
               <input
                 type={showPwd ? 'text' : 'password'}
                 className="form-input"
-                placeholder="Min. 6 characters"
+                placeholder="Min. 8 chars, upper + lower + digit"
                 style={{ paddingLeft: 40, paddingRight: 40 }}
                 value={form.password}
                 onChange={set('password')}

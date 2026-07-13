@@ -46,7 +46,7 @@ class QuestionResponse(BaseModel):
 class EvaluateAnswerRequest(BaseModel):
     interview_id: int
     question_id: int
-    answer_text: str = Field(..., min_length=1)
+    answer_text: str = Field(..., min_length=1, max_length=10_000)
 
 
 class EvaluationResult(BaseModel):

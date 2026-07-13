@@ -8,12 +8,25 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const stored = localStorage.getItem('user')
-    const token  = localStorage.getItem('token')
-    if (stored && token) {
-      try { setUser(JSON.parse(stored)) } catch { /* ignore */ }
+    const token = localStorage.getItem('token')
+    if (!token) {
+      setLoading(false)
+      return
     }
-    setLoading(false)
+
+    // Fix #17: Validate session by calling /auth/me instead of trusting localStorage
+    authAPI.me()
+      .then(({ data }) => {
+        setUser(data)
+        localStorage.setItem('user', JSON.stringify(data))
+      })
+      .catch(() => {
+        // Token is invalid or expired — clear stale data
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        setUser(null)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const login = async (email, password) => {

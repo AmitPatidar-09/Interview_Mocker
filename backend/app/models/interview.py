@@ -19,15 +19,6 @@ class Difficulty(str, enum.Enum):
     HARD = "Hard"
 
 
-class CompanyMode(str, enum.Enum):
-    """Legacy enum kept for backward compatibility. New company values are stored as plain strings."""
-    GENERIC = "Generic"
-    AMAZON = "Amazon"
-    MICROSOFT = "Microsoft"
-    ATLASSIAN = "Atlassian"
-    ADOBE = "Adobe"
-
-
 class InterviewStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"

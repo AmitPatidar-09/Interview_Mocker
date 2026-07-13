@@ -8,6 +8,9 @@ frontend/.env
 __pycache__/
 *.pyc
 
+# Database
+*.db
+
 # Node
 node_modules/
 dist/

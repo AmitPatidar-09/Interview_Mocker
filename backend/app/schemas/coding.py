@@ -3,22 +3,10 @@ from typing import Optional, List
 from datetime import datetime
 
 
-SUPPORTED_LANGUAGES = {
-    "python": 71,
-    "javascript": 63,
-    "java": 62,
-    "cpp": 54,
-    "c": 50,
-    "typescript": 74,
-    "go": 60,
-    "rust": 73,
-}
-
-
 class RunCodeRequest(BaseModel):
     language: str = Field(..., description="One of: python, javascript, java, cpp, c, typescript, go, rust")
-    source_code: str
-    stdin: Optional[str] = ""
+    source_code: str = Field(..., max_length=100_000)  # Fix #30: 100KB limit
+    stdin: Optional[str] = Field("", max_length=10_000)
     interview_id: Optional[int] = None
 
 
@@ -34,10 +22,10 @@ class RunCodeResponse(BaseModel):
 
 class SubmitCodeRequest(BaseModel):
     interview_id: int
-    problem_title: str
-    problem_statement: str
+    problem_title: str = Field(..., max_length=500)
+    problem_statement: str = Field(..., max_length=10_000)
     language: str
-    source_code: str
+    source_code: str = Field(..., max_length=100_000)  # Fix #30: 100KB limit
     test_cases: Optional[List[dict]] = []
     request_ai_review: bool = False
 

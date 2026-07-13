@@ -1,7 +1,8 @@
 """
-Coding service — DSA problem generation, code run/submit with Judge0 + Gemini review.
+Coding service — DSA problem generation, code run/submit with Judge0 + AI review.
 """
 
+import logging
 from sqlalchemy.orm import Session
 
 from ..models.coding_submission import CodingSubmission
@@ -9,14 +10,14 @@ from ..models.interview import Interview
 from ..models.question_bank import QuestionBank
 from ..prompts.templates import dsa_problem_generation_prompt, code_review_prompt
 from .ai_service import generate_json
-import radon.complexity as radon_cc
-from radon.visitors import ComplexityVisitor
 from .judge0_service import run_code, run_test_cases
 from typing import Dict, Any, List, Optional
 
+logger = logging.getLogger(__name__)
+
 
 async def generate_dsa_problem(db: Session, difficulty: str, company_mode: str) -> Dict[str, Any]:
-    """Generate a full DSA problem from QuestionBank or fallback to Gemini."""
+    """Generate a full DSA problem from QuestionBank or fallback to AI."""
     qb = db.query(QuestionBank).filter(
         QuestionBank.interview_type == "DSA",
         QuestionBank.difficulty == difficulty,
@@ -90,6 +91,7 @@ async def submit_and_review(
         # Use static analysis if python
         if language.lower() in ["python", "python3"]:
             try:
+                from radon.visitors import ComplexityVisitor
                 v = ComplexityVisitor.from_code(source_code)
                 complexities = [func.complexity for func in v.functions]
                 avg_complexity = sum(complexities) / len(complexities) if complexities else 1
@@ -101,8 +103,8 @@ async def submit_and_review(
                     "weaknesses": ["High cyclomatic complexity. Needs refactoring."] if avg_complexity >= 10 else [],
                     "optimization_suggestions": ["Break down functions to reduce complexity."] if avg_complexity >= 10 else []
                 }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Static analysis failed: %s", e)
 
     # Step 3: Persist
     submission = CodingSubmission(

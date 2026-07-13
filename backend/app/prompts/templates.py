@@ -13,21 +13,23 @@ def question_generation_prompt(
     company_mode: str,
     previous_questions: Optional[List[str]] = None,
 ) -> str:
+    # Fix #13: Build prompt with correct ordering — previously asked come BEFORE the instruction
     prev = ""
     if previous_questions:
         # Send ALL previous questions so the AI never repeats any of them
         prev = (
-            "ALREADY ASKED — you MUST NOT repeat or rephrase any of these:\n"
+            "ALREADY ASKED (you MUST NOT repeat or rephrase any of these):\n"
             + "\n".join(f"- {q[:80]}" for q in previous_questions)
-            + "\n"
+            + "\n\n"
         )
 
     company = f"Style: {company_mode} interview.\n" if company_mode != "Generic" else ""
 
     return (
+        f"{prev}"  # Fix #13: Previous questions come FIRST
+        f"{company}"
         f"Generate one UNIQUE {difficulty} {interview_type} interview question "
-        f"that is completely different from the questions listed above.\n"
-        f"{company}{prev}"
+        f"that is completely different from any question listed above.\n"
         f'Return JSON: {{"question":"...","category":"sub-topic"}}'
     )
 
@@ -87,11 +89,11 @@ def dsa_problem_generation_prompt(difficulty: str, company_mode: str) -> str:
     return (
         f"Generate a complete {difficulty} DSA coding problem. {company}\n"
         f"Return JSON:\n"
-        f'{{"title":"...","description":"full problem with examples","examples":'
-        f'[{{"input":"...","output":"...","explanation":"..."}}],'
-        f'"constraints":["..."],'
-        f'"starter_code":{{"python":"def solution(...):\\n    pass",'
-        f'"java":"class Solution {{\\n    public ... solution(...) {{}}\\n}}",'
-        f'"cpp":"class Solution {{\\npublic:\\n    ... solution(...) {{}}\\n}};"}},'
-        f'"test_cases":[{{"input":"...","expected_output":"..."}}]}}'
+        '{"title":"...","description":"full problem with examples","examples":'
+        '[{"input":"...","output":"...","explanation":"..."}],'
+        '"constraints":["..."],'
+        '"starter_code":{"python":"def solution(...):\\n    pass",'
+        '"java":"class Solution {\\n    public ... solution(...) {}\\n}",'
+        '"cpp":"class Solution {\\npublic:\\n    ... solution(...) {}\\n};"},'
+        '"test_cases":[{"input":"...","expected_output":"..."}]}'
     )

@@ -14,12 +14,15 @@ All providers implement the same interface:
     async generate_json(prompt: str) -> dict
 """
 
+import logging
 import httpx
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 from ..config import settings
 from ..utils.helpers import extract_json_from_response
+
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────── Base ────────────────────
@@ -132,7 +135,7 @@ def _build_provider(name: str) -> Optional[AIProvider]:
     try:
         return cls()
     except Exception as e:
-        print(f"[ai_service] Failed to initialise provider '{name}': {e}")
+        logger.error("Failed to initialise provider '%s': %s", name, e)
         return None
 
 
@@ -151,7 +154,7 @@ def _ensure_initialised():
     if fb_name and fb_name != "none" and fb_name != settings.AI_PROVIDER.lower():
         _fallback = _build_provider(fb_name)
     _initialised = True
-    print(f"[ai_service] Primary: {settings.AI_PROVIDER}  |  Fallback: {settings.AI_FALLBACK_PROVIDER}")
+    logger.info("Primary: %s  |  Fallback: %s", settings.AI_PROVIDER, settings.AI_FALLBACK_PROVIDER)
 
 
 # ──────────────────── Public API ────────────────────
@@ -161,8 +164,7 @@ async def generate_json(prompt: str, **kwargs) -> dict:
     Generate a JSON response from the configured AI provider.
     Automatically falls back to the secondary provider on failure.
 
-    Extra kwargs (db, user_id, endpoint) are accepted but ignored
-    for API compatibility with the old gemini_service signature.
+    Extra kwargs (db, user_id, endpoint) are accepted for API compatibility.
     """
     _ensure_initialised()
 
@@ -179,7 +181,7 @@ async def generate_json(prompt: str, **kwargs) -> dict:
             result = await provider.generate_json(prompt)
             return result
         except Exception as e:
-            print(f"[ai_service] Provider '{provider.name}' failed: {e}")
+            logger.warning("Provider '%s' failed: %s", provider.name, e)
             last_error = e
 
     raise RuntimeError(

@@ -1,5 +1,5 @@
 from .user import User
-from .interview import Interview, InterviewType, Difficulty, CompanyMode
+from .interview import Interview, InterviewType, Difficulty
 from .question import Question
 from .response import Response
 from .coding_submission import CodingSubmission
@@ -13,7 +13,6 @@ __all__ = [
     "Interview",
     "InterviewType",
     "Difficulty",
-    "CompanyMode",
     "Question",
     "Response",
     "CodingSubmission",
@@ -22,3 +21,4 @@ __all__ = [
     "TokenUsageLog",
     "CompanyQuestion",
 ]
+

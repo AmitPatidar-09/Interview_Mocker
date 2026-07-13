@@ -2,6 +2,7 @@
 Analytics routes — dashboard stats and interview history.
 """
 
+import logging
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 

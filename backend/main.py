@@ -2,19 +2,36 @@
 InterviewAce AI — FastAPI application entry point.
 """
 
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.database import create_tables
 from app.routes import auth, interview, coding, analytics
+
+# ──────────────────── Logging ────────────────────
+logging.basicConfig(
+    level=logging.DEBUG if settings.DEBUG else logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# ──────────────────── Rate Limiter (Fix #5) ────────────────────
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
 # ──────────────────── Lifespan ────────────────────
 
 @asynccontextmanager
 async def lifespan(app):
     create_tables()
+    logger.info("Database tables created/verified.")
     yield
 
 # ──────────────────── App ────────────────────
@@ -23,10 +40,14 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="AI-powered technical interview practice platform.",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.DEBUG else None,    # Hide docs in production
+    redoc_url="/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
 )
+
+# Attach rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ──────────────────── CORS ────────────────────
 

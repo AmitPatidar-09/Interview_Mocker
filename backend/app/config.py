@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
-from functools import lru_cache
 from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -8,9 +10,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "InterviewAce AI"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
-    SECRET_KEY: str = "change-this-to-a-very-long-random-secret-key-in-production"
+    SECRET_KEY: str = ""  # MUST be set in .env — no insecure default
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours (was 7 days)
 
     # Database
     DATABASE_URL: str = "sqlite:///./interviewace.db"
@@ -51,10 +53,15 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
 
 
-@lru_cache()
 def get_settings() -> Settings:
-    return Settings()
+    """Create settings from .env — no caching so restarts pick up changes."""
+    s = Settings()
+    if not s.SECRET_KEY:
+        raise RuntimeError(
+            "SECRET_KEY is not set! Generate one with: "
+            "python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+        )
+    return s
 
 
 settings = get_settings()
-# Force uvicorn to reload to pick up the new .env values

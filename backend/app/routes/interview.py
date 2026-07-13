@@ -2,6 +2,8 @@
 Interview routes — start, submit answers, complete, and view history.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
@@ -25,8 +27,10 @@ from ..schemas.interview import (
     ResponseDetail,
     CompleteInterviewRequest,
 )
-from ..services.interview_service import generate_next_question, evaluate_answer, complete_interview
+from ..services.interview_service import generate_next_question, evaluate_answer, complete_interview, _update_analytics
 from ..utils.auth import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
 
@@ -272,3 +276,6 @@ async def delete_interview(
     interview = _get_interview_or_404(db, interview_id, current_user.id)
     db.delete(interview)
     db.commit()
+
+    # Fix #12: Recalculate analytics after deletion so stats stay accurate
+    await _update_analytics(db, current_user.id)

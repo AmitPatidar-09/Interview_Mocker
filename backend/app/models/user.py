@@ -13,6 +13,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     avatar_url = Column(String, nullable=True)
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)  # Fix #3: for JWT invalidation
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

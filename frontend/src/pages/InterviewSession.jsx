@@ -81,7 +81,12 @@ export default function InterviewSession() {
   const maxQ           = 10
   const progress       = Math.min((answeredCount / maxQ) * 100, 100)
 
+  // Fix #26: Use a ref to track initialisation instead of relying on stale deps
+  const initRef = useRef(false)
   useEffect(() => {
+    if (initRef.current) return
+    initRef.current = true
+
     if (!state?.firstQuestion) {
       // Resuming an in-progress session — load from API
       interviewAPI.session(id).then(({ data }) => {
@@ -95,7 +100,7 @@ export default function InterviewSession() {
       setMessages([{ role: 'question', content: state.firstQuestion.content, order_index: 0 }])
       setLoading(false)
     }
-  }, [id])
+  }, [id, state])
 
   useEffect(() => {
     if (chatRef.current) {

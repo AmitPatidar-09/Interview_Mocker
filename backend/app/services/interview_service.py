@@ -3,9 +3,10 @@ Interview service — business logic for question generation, evaluation, and co
 Uses the unified ai_service for all AI calls (Ollama / Groq / Gemini).
 """
 
+import logging
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..models.interview import Interview, InterviewType, Difficulty, InterviewStatus
 from ..models.question import Question
@@ -17,7 +18,10 @@ from ..prompts.templates import (
     answer_evaluation_prompt,
     weak_topic_detection_prompt,
 )
+from ..utils.helpers import sanitize_for_prompt
 from .ai_service import generate_json
+
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────── Question Generation ────────────────────
@@ -126,8 +130,6 @@ async def _generate_unique_ai_question(
     Ask the AI for a question, retrying up to *max_retries* times if it
     produces something too similar to an already-asked question.
     """
-    from ..prompts.templates import question_generation_prompt  # already at module top but safe here
-
     for attempt in range(max_retries):
         prompt = question_generation_prompt(
             interview_type=interview.interview_type.value,
@@ -143,9 +145,9 @@ async def _generate_unique_ai_question(
             if content and not _is_too_similar(content, asked_normalised):
                 return content, category
 
-            print(f"[interview_service] AI returned similar question on attempt {attempt + 1}, retrying…")
+            logger.warning("AI returned similar question on attempt %d, retrying…", attempt + 1)
         except Exception as e:
-            print(f"[interview_service] AI question generation failed (attempt {attempt + 1}): {e}")
+            logger.error("AI question generation failed (attempt %d): %s", attempt + 1, e)
 
     # Exhausted retries — use a safe generic fallback
     fallback_content = (
@@ -168,10 +170,13 @@ async def evaluate_answer(
     Evaluate *answer_text* for *question* using the configured AI provider.
     Persists the Response and updates the running summary.
     """
+    # Fix #14: Sanitize user answer before embedding in prompt
+    sanitized_answer = sanitize_for_prompt(answer_text, max_length=5000)
+
     # Pass running_summary directly into prompt for context (token-efficient)
     prompt = answer_evaluation_prompt(
         question=question.content,
-        answer=answer_text,
+        answer=sanitized_answer,
         interview_type=interview.interview_type.value,
         difficulty=interview.difficulty.value,
         running_summary=interview.running_summary or "",
@@ -180,7 +185,7 @@ async def evaluate_answer(
     try:
         data = await generate_json(prompt)
     except Exception as e:
-        print(f"[interview_service] AI answer evaluation failed: {e}")
+        logger.error("AI answer evaluation failed: %s", e)
         data = {
             "score": 5.0,
             "strengths": ["Answer recorded"],
@@ -188,10 +193,14 @@ async def evaluate_answer(
             "ideal_answer": "",
         }
 
+    # Fix #11: Clamp score to 0–10 range
+    raw_score = float(data.get("score", 0.0))
+    clamped_score = max(0.0, min(10.0, raw_score))
+
     response = Response(
         question_id=question.id,
         answer_text=answer_text,
-        score=float(data.get("score", 0.0)),
+        score=clamped_score,
         strengths=data.get("strengths", []),
         weaknesses=data.get("weaknesses", []),
         ideal_answer=data.get("ideal_answer", ""),
@@ -221,10 +230,18 @@ def _update_running_summary(
     """
     entry = f"Q: {question[:80]} | Score: {score}/10"
     existing = interview.running_summary or ""
-    # Keep only last 500 chars to avoid bloating future prompts
     combined = (existing + "\n" + entry).strip()
+    # Fix #9: Truncate at line boundary instead of mid-line
     if len(combined) > 500:
-        combined = combined[-500:]
+        lines = combined.split("\n")
+        truncated = ""
+        for line in reversed(lines):
+            candidate = (line + "\n" + truncated).strip() if truncated else line
+            if len(candidate) <= 500:
+                truncated = candidate
+            else:
+                break
+        combined = truncated
     interview.running_summary = combined
     db.commit()
 
@@ -262,27 +279,28 @@ async def complete_interview(db: Session, interview: Interview) -> Interview:
     db.commit()
     db.refresh(interview)
 
-    await _update_analytics(db, interview.user_id, interview, responses)
+    await _update_analytics(db, interview.user_id)
     return interview
 
 
-# ──────────────────── Analytics Update ────────────────────
+# ──────────────────── Analytics Update (Fix #8: no N+1 queries) ────────────────────
 
-async def _update_analytics(
-    db: Session,
-    user_id: int,
-    interview: Interview,
-    responses: List[Response],
-) -> None:
-    """Recalculate and persist Analytics for the given user."""
+async def _update_analytics(db: Session, user_id: int) -> None:
+    """Recalculate and persist Analytics for the given user.
+    
+    Fix #8: Uses joined queries instead of N+1 loop.
+    """
     analytics = db.query(Analytics).filter(Analytics.user_id == user_id).first()
     if not analytics:
         analytics = Analytics(user_id=user_id)
         db.add(analytics)
         db.flush()
 
-    all_interviews = (
-        db.query(Interview)
+    # Single query: get all responses with their questions for completed interviews
+    results = (
+        db.query(Response.score, Question.category, Interview.interview_type)
+        .join(Question, Response.question_id == Question.id)
+        .join(Interview, Question.interview_id == Interview.id)
         .filter(
             Interview.user_id == user_id,
             Interview.status == InterviewStatus.COMPLETED,
@@ -290,30 +308,26 @@ async def _update_analytics(
         .all()
     )
 
-    total_interviews = len(all_interviews)
+    total_interviews = (
+        db.query(Interview)
+        .filter(
+            Interview.user_id == user_id,
+            Interview.status == InterviewStatus.COMPLETED,
+        )
+        .count()
+    )
+
     all_scores: List[float] = []
     topic_scores_raw: Dict[str, List[float]] = {}
-    total_questions_answered = 0
 
-    for iv in all_interviews:
-        iv_responses = (
-            db.query(Response)
-            .join(Question, Response.question_id == Question.id)
-            .filter(Question.interview_id == iv.id)
-            .all()
-        )
-        iv_questions = db.query(Question).filter(Question.interview_id == iv.id).all()
-        total_questions_answered += len(iv_responses)
-
-        for resp in iv_responses:
-            if resp.score is not None:
-                all_scores.append(resp.score)
-                q = next((q for q in iv_questions if q.id == resp.question_id), None)
-                topic = (q.category or iv.interview_type.value) if q else iv.interview_type.value
-                topic_scores_raw.setdefault(topic, []).append(resp.score)
+    for score, category, interview_type in results:
+        if score is not None:
+            all_scores.append(score)
+            topic = category or interview_type.value
+            topic_scores_raw.setdefault(topic, []).append(score)
 
     analytics.total_interviews = total_interviews
-    analytics.total_questions_answered = total_questions_answered
+    analytics.total_questions_answered = len(results)
     analytics.average_score = round(sum(all_scores) / len(all_scores), 2) if all_scores else 0.0
 
     topic_scores: Dict[str, float] = {
@@ -329,7 +343,7 @@ async def _update_analytics(
             analytics.weak_areas = result.get("weak_areas", [])
             analytics.strong_areas = result.get("strong_areas", [])
         except Exception as e:
-            print(f"[interview_service] AI area classification failed: {e}")
+            logger.error("AI area classification failed: %s", e)
             analytics.weak_areas = [t for t, s in topic_scores.items() if s < 5.5]
             analytics.strong_areas = [t for t, s in topic_scores.items() if s >= 7.5]
     elif topic_scores:
